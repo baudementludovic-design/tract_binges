@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Carte du tractage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout : en-tête compact, carte satellite à gauche, panneau de travail à droite (empilé sur mobile) */
+:root{
+  --bg:#edf0f3; --panel:#ffffff; --ink:#152029; --muted:#5a6774; --line:#d5dce3; --soft:#f4f6f8;
+  --accent:#d9481f; --accent-ink:#ffffff; --map-bg:#1a232c; --danger:#b42318; --ok:#1f7a4d;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e141a; --panel:#151d25; --ink:#e5ebf0; --muted:#94a2af; --line:#26323d; --soft:#1b2530;
+  --accent:#ff7448; --accent-ink:#1a0e08; --map-bg:#090d11; --danger:#ff6b5e; --ok:#4fd08f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e141a; --panel:#151d25; --ink:#e5ebf0; --muted:#94a2af; --line:#26323d; --soft:#1b2530;
+  --accent:#ff7448; --accent-ink:#1a0e08; --map-bg:#090d11; --danger:#ff6b5e; --ok:#4fd08f; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+img{max-width:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 32px}
+.wrap{max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,4vw,40px);line-height:1;margin:4px 0 0;text-wrap:balance}
+.lede{margin:6px 0 0;color:var(--muted);max-width:60ch}
+.stats{display:flex;gap:8px;flex-wrap:wrap}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:96px}
+.stat b{display:block;font-family:var(--mono);font-size:20px;font-variant-numeric:tabular-nums;font-weight:500}
+.stat span{font-size:12px;color:var(--muted)}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+@media (max-width:900px){.main{grid-template-columns:minmax(0,1fr)}}
+
+.mapbox{position:relative;background:var(--map-bg);border-radius:10px;overflow:hidden;height:min(74vh,720px);min-height:380px}
+@media (max-width:900px){.mapbox{height:64vh;min-height:340px}}
+#map{position:absolute;inset:0;background:var(--map-bg);font-family:var(--body)}
+#map.drawing,#map.drawing .leaflet-interactive{cursor:crosshair}
+.leaflet-container a{color:#2a62c9}
+.leaflet-control-attribution{font-size:10px}
+.zlabel{background:transparent;border:0;box-shadow:none;padding:0;color:#fff;font-weight:600;font-size:13px;
+  text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000;white-space:nowrap}
+.zlabel::before{display:none}
+.tools{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:500}
+.tools button{width:38px;height:38px;border-radius:8px;border:0;background:rgba(15,22,29,.85);color:#fff;font-size:18px;font-weight:600;cursor:pointer;display:grid;place-items:center}
+.tools button:hover{background:rgba(15,22,29,.97)}
+.tools button:disabled{opacity:.5}
+.tools .sep{height:4px}
+.layers{position:absolute;top:10px;left:10px;z-index:500;display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:calc(100% - 70px)}
+.layers .seg{display:flex;background:rgba(15,22,29,.85);border-radius:8px;padding:3px}
+.layers .seg button{font:inherit;font-size:13px;font-weight:600;color:#d9e1e8;background:none;border:0;border-radius:6px;padding:6px 10px;cursor:pointer}
+.layers .seg button.on{background:#fff;color:#152029}
+.layers label{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#fff;background:rgba(15,22,29,.85);border-radius:8px;padding:7px 10px;cursor:pointer}
+.maphint{position:absolute;left:10px;bottom:24px;right:60px;pointer-events:none;display:flex;z-index:500}
+.maphint span{background:rgba(15,22,29,.88);color:#fff;font-size:13px;padding:6px 10px;border-radius:6px;max-width:100%}
+
+aside{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+aside h2{font-family:var(--display);font-size:22px;font-weight:700;margin:0;line-height:1.1}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+
+button.btn{font:inherit;font-weight:600;border-radius:8px;padding:9px 14px;border:1px solid var(--line);background:var(--soft);color:var(--ink);cursor:pointer}
+button.btn:hover{border-color:var(--muted)}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.btn.primary:hover{filter:brightness(1.06)}
+button.btn.danger{color:var(--danger)}
+button.btn.danger.armed{background:var(--danger);border-color:var(--danger);color:#fff}
+button.btn:disabled{opacity:.5;cursor:not-allowed}
+button.btn.wide{width:100%}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.notice{font-size:13px;padding:8px 10px;border-radius:8px;background:var(--soft);color:var(--muted);border:1px solid var(--line)}
+.notice.err{color:var(--danger)}
+
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600}
+input[type=text],input[type=date],input[type=number],textarea,select{font:inherit;font-weight:400;font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+textarea{resize:vertical;min-height:64px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatches input{position:absolute;opacity:0;pointer-events:none}
+.swatches label{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line)}
+.swatches input:checked+label{box-shadow:0 0 0 2px var(--ink)}
+.swatches input:focus-visible+label{outline:2px solid var(--accent);outline-offset:2px}
+
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.count{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.list{display:flex;flex-direction:column;border-top:1px solid var(--line);max-height:520px;overflow:auto}
+.item{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer;background:none;border-left:0;border-right:0;border-top:0;text-align:left;font:inherit;color:inherit;width:100%}
+.item:hover{background:var(--soft)}
+.item.sel{background:var(--soft)}
+.dot{width:14px;height:14px;border-radius:4px;margin-top:3px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+.item .who{font-weight:600;overflow-wrap:anywhere}
+.item .meta{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.item .n{font-family:var(--mono);font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.empty{padding:18px 4px;color:var(--muted);font-size:14px}
+dl.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;margin:0;font-size:14px}
+dl.kv dt{color:var(--muted)}
+dl.kv dd{margin:0;overflow-wrap:anywhere}
+.toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+@media (prefers-reduced-motion:no-preference){.item,button.btn{transition:background-color .15s,border-color .15s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Binges · distribution de tracts</div>
+      <h1>Carte du tractage</h1>
+      <p class="lede">Tracez la zone où vous avez déposé des tracts dans les boîtes aux lettres. Tout le monde voit les zones déjà couvertes, ce qui évite de repasser deux fois dans la même rue.</p>
+    </div>
+    <div class="stats" aria-live="polite">
+      <div class="stat"><b id="stZones">0</b><span>zones tracées</span></div>
+      <div class="stat"><b id="stTracts">0</b><span>tracts déposés</span></div>
+      <div class="stat"><b id="stPeople">0</b><span>distributeurs</span></div>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="mapbox">
+      <div id="map" role="application" aria-label="Carte du village avec les zones de distribution"></div>
+      <div class="layers" role="group" aria-label="Fond de carte">
+        <div class="seg"><button type="button" data-layer="sat" class="on">Satellite</button><button type="button" data-layer="plan">Plan</button></div>
+        <label id="streetNamesWrap"><input type="checkbox" id="streetNames" checked> Noms des rues</label>
+      </div>
+      <div class="tools">
+        <button type="button" id="zIn" title="Zoomer" aria-label="Zoomer">+</button>
+        <button type="button" id="zOut" title="Dézoomer" aria-label="Dézoomer">−</button>
+        <span class="sep"></span>
+        <button type="button" id="zReset" title="Recentrer sur le village" aria-label="Recentrer sur le village">⌂</button>
+        <button type="button" id="zLocate" title="Me localiser" aria-label="Me localiser">◎</button>
+      </div>
+      <div class="maphint" id="mapHint" hidden><span id="mapHintText"></span></div>
+    </div>
+
+    <aside id="panel">
+      <!-- Vue liste -->
+      <section id="vList" class="col" style="display:flex;flex-direction:column;gap:14px">
+        <div class="row" style="justify-content:space-between">
+          <h2>Zones couvertes</h2>
+          <label class="toggle"><input type="checkbox" id="showLabels" checked> Noms sur la carte</label>
+        </div>
+        <button type="button" class="btn primary wide" id="startDraw">Tracer une zone distribuée</button>
+        <div id="status" class="notice">Chargement des zones…</div>
+        <label class="f">Afficher
+          <select id="filter"><option value="">Tous les distributeurs</option></select>
+        </label>
+        <div class="list" id="list"></div>
+      </section>
+
+      <!-- Vue tracé -->
+      <section id="vDraw" hidden style="display:flex;flex-direction:column;gap:14px">
+        <h2>Tracer la zone</h2>
+        <ol class="steps">
+          <li>Touchez la carte pour poser un point à chaque coin de la zone.</li>
+          <li>Faites glisser pour déplacer la carte, pincez ou utilisez + / − pour zoomer au plus près des maisons.</li>
+          <li>Touchez le premier point, ou « Terminer », pour fermer la zone.</li>
+        </ol>
+        <div class="notice"><span class="count" id="ptCount">0</span> point(s) posé(s) · au moins 3 nécessaires</div>
+        <div class="row">
+          <button type="button" class="btn primary" id="finishDraw" disabled>Terminer</button>
+          <button type="button" class="btn" id="undoPt" disabled>Retirer le dernier point</button>
+          <button type="button" class="btn" id="cancelDraw">Annuler</button>
+        </div>
+      </section>
+
+      <!-- Vue formulaire -->
+      <form id="vForm" hidden style="display:flex;flex-direction:column;gap:12px" novalidate>
+        <h2 id="formTitle">Détails de la distribution</h2>
+        <label class="f">Votre nom
+          <input type="text" id="fWho" maxlength="60" autocomplete="name" placeholder="ex. Martine D." required>
+        </label>
+        <div class="grid2">
+          <label class="f">Date
+            <input type="date" id="fDate" required>
+          </label>
+          <label class="f">Tracts déposés
+            <input type="number" id="fCount" min="0" max="5000" step="1" inputmode="numeric" placeholder="ex. 80">
+          </label>
+        </div>
+        <label class="f">Rues ou remarque
+          <textarea id="fNote" maxlength="400" placeholder="ex. Rue du Val de Saône côté pair, boîtes 'Stop pub' évitées"></textarea>
+        </label>
+        <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Couleur de la zone
+          <div class="swatches" id="swatches" role="radiogroup" aria-label="Couleur de la zone"></div>
+        </div>
+        <div id="formErr" class="notice err" hidden></div>
+        <div class="row">
+          <button type="submit" class="btn primary" id="saveBtn">Enregistrer la zone</button>
+          <button type="button" class="btn" id="cancelForm">Annuler</button>
+        </div>
+      </form>
+
+      <!-- Vue détail -->
+      <section id="vDetail" hidden style="display:flex;flex-direction:column;gap:14px">
+        <div class="row" style="gap:10px"><span class="dot" id="dDot"></span><h2 id="dWho"></h2></div>
+        <dl class="kv">
+          <dt>Date</dt><dd id="dDate"></dd>
+          <dt>Tracts</dt><dd id="dCount" class="count"></dd>
+          <dt>Remarque</dt><dd id="dNote"></dd>
+          <dt>Ajoutée le</dt><dd id="dBy"></dd>
+        </dl>
+        <div id="detailErr" class="notice err" hidden></div>
+        <div class="row">
+          <button type="button" class="btn" id="dEdit">Modifier</button>
+          <button type="button" class="btn danger" id="dDelete">Supprimer</button>
+          <button type="button" class="btn" id="dClose">Retour à la liste</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+  <footer class="row small muted" style="justify-content:space-between">
+    <span id="syncInfo"></span>
+    <span class="row" style="gap:6px">
+      <button type="button" class="btn" id="adminBtn" style="padding:5px 10px;font-size:13px">Accès organisateur</button>
+      <span id="adminBox" hidden class="row" style="gap:6px">
+        <input type="text" id="adminCode" placeholder="Code organisateur" style="width:170px;padding:5px 8px;font-size:13px">
+        <button type="button" class="btn" id="adminOk" style="padding:5px 10px;font-size:13px">Valider</button>
+      </span>
+    </span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* =====================================================================
+   CONFIGURATION
+   Collez entre les guillemets l'URL du déploiement Google Apps Script
+   (elle se termine par /exec). Laissée vide, la page fonctionne en
+   mode démo : les zones restent dans ce navigateur uniquement.
+   ===================================================================== */
+const API_URL = "https://script.google.com/macros/s/AKfycbzJpJi73yfjvNPW43lICjeHfCQxSTPzNH1AyGPPag2QbNaMNSlsqhbfiiagjs-dxC5g/exec";
+const REFRESH_SECONDS = 20;
+
+/* Village affiché à l'ouverture.
+   - centre : point de départ (latitude, longitude). Il est recalé
+     automatiquement sur la commune via l'IGN si recentrageAuto vaut true.
+   - decalage : déplace ensuite la vue, en mètres. Augmentez "ouest" pour
+     décaler la carte vers l'ouest (valeur négative = vers l'est) ; "nord"
+     fonctionne de la même façon (négatif = vers le sud).
+   - zoom : de 15 (vue large) à 18 (très près). */
+const VILLAGE = {
+  nom: "Binges", departement: "21",
+  centre: [47.3245, 5.2700], recentrageAuto: true,
+  decalage: { ouest: 600, nord: 300 },
+  zoom: 16
+};
+
+(() => {
+  const COLORS = [
+    ["#ffd400","Jaune"],["#00e0ff","Cyan"],["#7cff4f","Vert"],["#ff8a00","Orange"],
+    ["#ff4fd8","Rose"],["#ffffff","Blanc"],["#4f7bff","Bleu"],["#ff3b3b","Rouge"]
+  ];
+  const $ = s => document.querySelector(s);
+
+  // ---------- état ----------
+  let ready = false, isAdmin = false, canWrite = true;
+  let zones = new Map();          // id -> data  (pts = [[lat, lng], ...])
+  let selected = null;            // id
+  let mode = "list";              // list | draw | form | detail
+  let draft = [];                 // [[lat,lng]] pendant le tracé
+  let editingId = null;           // id si modification
+  let hover = null;               // position du curseur pendant le tracé
+
+  const store = {
+    get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+    set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+  };
+
+  // ---------- carte Leaflet ----------
+  function vue(){
+    const [lat, lng] = VILLAGE.centre, d = VILLAGE.decalage || {};
+    return [lat + (Number(d.nord) || 0) / 111320, lng - (Number(d.ouest) || 0) / (111320 * Math.cos(lat * Math.PI / 180))];
+  }
+  const map = L.map("map", { zoomControl:false, maxZoom:21, minZoom:11, tap:true })
+               .setView(vue(), VILLAGE.zoom);
+  map.attributionControl.setPrefix(false);
+  const IGN = layer => "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&STYLE=normal&TILEMATRIXSET=PM"
+                     + "&LAYER=" + layer + "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}";
+  const bases = {
+    sat: L.tileLayer(IGN("ORTHOIMAGERY.ORTHOPHOTOS") + "&FORMAT=image/jpeg", {maxNativeZoom:19, maxZoom:21, attribution:"Photographies aériennes © IGN"}),
+    plan: L.tileLayer(IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2") + "&FORMAT=image/png", {maxNativeZoom:19, maxZoom:21, attribution:"Plan IGN © IGN"})
+  };
+  // Noms des rues par-dessus la photo (service Esri gratuit, sans clé)
+  const streetNames = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+    {maxNativeZoom:19, maxZoom:21, attribution:"Noms des rues © Esri, HERE, Garmin, OpenStreetMap"});
+  let baseKey = store.get("tract.base") === "plan" ? "plan" : "sat";
+  function setBase(k){
+    baseKey = k; store.set("tract.base", k);
+    Object.entries(bases).forEach(([n, l]) => { if (n === k) l.addTo(map); else map.removeLayer(l); });
+    document.querySelectorAll(".layers [data-layer]").forEach(b => b.classList.toggle("on", b.dataset.layer === k));
+    applyStreetNames();
+  }
+  function applyStreetNames(){
+    const on = $("#streetNames").checked && baseKey === "sat";
+    if (on) streetNames.addTo(map); else map.removeLayer(streetNames);
+    $("#streetNamesWrap").hidden = baseKey !== "sat";
+  }
+  document.querySelectorAll(".layers [data-layer]").forEach(b => b.onclick = () => setBase(b.dataset.layer));
+  if (store.get("tract.streets") === "0") $("#streetNames").checked = false;
+  $("#streetNames").onchange = () => { store.set("tract.streets", $("#streetNames").checked ? "1" : "0"); applyStreetNames(); };
+  setBase(baseKey);
+
+  const zoneLayer = L.layerGroup().addTo(map);
+  const draftLayer = L.layerGroup().addTo(map);
+
+  $("#zIn").onclick = () => map.zoomIn();
+  $("#zOut").onclick = () => map.zoomOut();
+  $("#zReset").onclick = () => map.setView(vue(), VILLAGE.zoom);
+  $("#zLocate").onclick = () => {
+    const b = $("#zLocate"); b.disabled = true;
+    map.locate({setView:true, maxZoom:18, enableHighAccuracy:true, timeout:10000});
+    setTimeout(() => b.disabled = false, 3000);
+  };
+  let meMarker = null;
+  map.on("locationfound", e => {
+    if (meMarker) map.removeLayer(meMarker);
+    meMarker = L.circleMarker(e.latlng, {radius:7, color:"#fff", weight:2, fillColor:"#1a73e8", fillOpacity:1, interactive:false}).addTo(map);
+  });
+  map.on("locationerror", () => flashHint("Position indisponible : autorisez la localisation dans votre navigateur."));
+
+  // Recentrage automatique sur la commune (géocodage IGN)
+  if (VILLAGE.recentrageAuto) (async () => {
+    try {
+      const r = await fetch("https://data.geopf.fr/geocodage/search?q=" + encodeURIComponent(VILLAGE.nom) + "&index=address&type=municipality&limit=10");
+      const j = await r.json();
+      const f = (j.features || []).find(f => {
+        const p = f.properties || {};
+        return String(p.name || p.city || "").toLowerCase() === VILLAGE.nom.toLowerCase()
+          && (String(p.citycode || "").startsWith(VILLAGE.departement) || String(p.postcode || "").startsWith(VILLAGE.departement));
+      });
+      if (f && f.geometry && f.geometry.coordinates) {
+        const [lng, lat] = f.geometry.coordinates;
+        const moved = map.getCenter().distanceTo(vue()) > 30;
+        VILLAGE.centre = [lat, lng];
+        if (!moved && mode === "list" && !selected) map.setView(vue(), VILLAGE.zoom);
+      }
+    } catch (e) { /* on garde le centre configuré */ }
+  })();
+
+  let hintTimer = null;
+  function flashHint(text){
+    $("#mapHint").hidden = false; $("#mapHintText").textContent = text;
+    clearTimeout(hintTimer); hintTimer = setTimeout(() => { if (mode !== "draw") $("#mapHint").hidden = true; }, 4000);
+  }
+
+  // ---------- tracé ----------
+  function near(a, b, px){
+    const p = map.latLngToContainerPoint(a), q = map.latLngToContainerPoint(b);
+    return Math.hypot(p.x - q.x, p.y - q.y) < px;
+  }
+  function addPoint(latlng){
+    const pt = [Math.round(latlng.lat * 1e6) / 1e6, Math.round(latlng.lng * 1e6) / 1e6];
+    if (draft.length >= 3 && (near(pt, draft[0], 14) || near(pt, draft[draft.length - 1], 8))) { finishDraw(); return; }
+    if (draft.length && near(pt, draft[draft.length - 1], 4)) return;
+    draft.push(pt); updateDrawUI(); renderDraft();
+  }
+  map.on("click", e => {
+    if (mode === "draw") { addPoint(e.latlng); return; }
+    if (mode === "detail") { selected = null; showMode("list"); renderZones(); renderList(); }
+  });
+  map.on("mousemove", e => { if (mode === "draw" && draft.length) { hover = [e.latlng.lat, e.latlng.lng]; renderHover(); } });
+  map.on("mouseout", () => { hover = null; renderHover(); });
+
+  const DRAFT = "#ff7448";
+  let hoverLine = null;
+  function renderHover(){
+    if (hoverLine) { draftLayer.removeLayer(hoverLine); hoverLine = null; }
+    if (mode !== "draw" || !hover || !draft.length) return;
+    const pts = draft.length >= 2 ? [draft[draft.length - 1], hover, draft[0]] : [draft[0], hover];
+    hoverLine = L.polyline(pts, {color:DRAFT, weight:2, dashArray:"4 6", opacity:.9, interactive:false}).addTo(draftLayer);
+  }
+  function renderDraft(){
+    draftLayer.clearLayers(); hoverLine = null;
+    if (mode !== "draw" || !draft.length) return;
+    if (draft.length >= 3) L.polygon(draft, {stroke:false, fillColor:DRAFT, fillOpacity:.22, interactive:false}).addTo(draftLayer);
+    L.polyline(draft, {color:"#000", weight:5, opacity:.55, interactive:false}).addTo(draftLayer);
+    L.polyline(draft, {color:DRAFT, weight:2.5, dashArray:"7 5", interactive:false}).addTo(draftLayer);
+    draft.forEach((p, i) => {
+      const first = i === 0 && draft.length >= 3;
+      const m = L.circleMarker(p, {radius: first ? 9 : 5, color:"#000", weight:1.5, fillColor: i === 0 ? DRAFT : "#fff", fillOpacity:1, interactive:first, bubblingMouseEvents:false});
+      if (first) m.on("click", ev => { L.DomEvent.stop(ev); finishDraw(); });
+      m.addTo(draftLayer);
+    });
+    renderHover();
+  }
+
+  // ---------- rendu des zones ----------
+  function sorted(){
+    return [...zones.entries()].sort((a,b) => (b[1].date||"").localeCompare(a[1].date||"") || (b[1].at||"").localeCompare(a[1].at||""));
+  }
+  function filterVal(){ return $("#filter").value; }
+  function visible(z){ const f = filterVal(); return !f || (z.who||"").trim().toLowerCase() === f; }
+  function validPts(z){ return Array.isArray(z.pts) && z.pts.length >= 3 && z.pts.every(p => Array.isArray(p) && Math.abs(p[0]) <= 90 && Math.abs(p[1]) <= 180); }
+
+  const polys = new Map();
+  function renderZones(){
+    zoneLayer.clearLayers(); polys.clear();
+    const drawing = mode === "draw" || mode === "form";
+    const showNames = $("#showLabels").checked;
+    const list = sorted().reverse();
+    list.sort((a,b) => (a[0]===selected) - (b[0]===selected));
+    for (const [id, z] of list) {
+      if (!validPts(z)) continue;
+      const on = visible(z), sel = id === selected, c = z.color || "#ffd400";
+      L.polygon(z.pts, {color:"#000", weight: sel ? 6 : 4, opacity: on ? .55 : .15, fill:false, interactive:false}).addTo(zoneLayer);
+      const p = L.polygon(z.pts, {color:c, weight: sel ? 3.5 : 2, opacity: on ? 1 : .3, fillColor:c, fillOpacity: on ? (sel ? .45 : .28) : .08, interactive: !drawing, bubblingMouseEvents:false});
+      if (!drawing) p.on("click", () => select(id, false));
+      if (showNames && on) p.bindTooltip(String(z.who || "?").slice(0, 28), {permanent:true, direction:"center", className:"zlabel", interactive:false});
+      p.addTo(zoneLayer); polys.set(id, p);
+    }
+  }
+  function fmtDate(d){
+    if (!d) return "—";
+    const t = new Date(d + "T12:00:00"); if (isNaN(t)) return d;
+    return t.toLocaleDateString("fr-FR", {weekday:"short", day:"numeric", month:"long"});
+  }
+  function renderStats(){
+    let n = 0; const who = new Set();
+    for (const z of zones.values()) { n += Number(z.count) || 0; if (z.who) who.add(z.who.trim().toLowerCase()); }
+    $("#stZones").textContent = zones.size;
+    $("#stTracts").textContent = n.toLocaleString("fr-FR");
+    $("#stPeople").textContent = who.size;
+  }
+  function renderFilter(){
+    const sel = $("#filter"), cur = sel.value, names = new Map();
+    for (const z of zones.values()) if (z.who) { const key = z.who.trim().toLowerCase(); if (!names.has(key)) names.set(key, z.who.trim()); }
+    sel.replaceChildren();
+    const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "Tous les distributeurs"; sel.appendChild(o0);
+    [...names.entries()].sort((a,b)=>a[1].localeCompare(b[1],"fr")).forEach(([k,v]) => { const o = document.createElement("option"); o.value = k; o.textContent = v; sel.appendChild(o); });
+    sel.value = names.has(cur) ? cur : "";
+  }
+  function renderList(){
+    const box = $("#list"); box.replaceChildren();
+    const items = sorted().filter(([,z]) => visible(z));
+    if (!items.length) {
+      const d = document.createElement("div"); d.className = "empty";
+      d.textContent = zones.size ? "Aucune zone pour ce distributeur." : "Aucune zone tracée pour l'instant. Après votre tournée, touchez « Tracer une zone distribuée » et dessinez les rues que vous avez couvertes.";
+      box.appendChild(d); return;
+    }
+    for (const [id, z] of items) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "item" + (id===selected ? " sel" : "");
+      const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = z.color || "#ffd400";
+      const mid = document.createElement("span");
+      const w = document.createElement("div"); w.className = "who"; w.textContent = z.who || "Sans nom";
+      const m = document.createElement("div"); m.className = "meta"; m.textContent = fmtDate(z.date) + (z.note ? " · " + z.note : "");
+      mid.append(w, m);
+      const n = document.createElement("span"); n.className = "n"; n.textContent = Number(z.count) ? z.count + " tracts" : "";
+      b.append(dot, mid, n);
+      b.onclick = () => select(id, true);
+      box.appendChild(b);
+    }
+  }
+  function renderAll(){ renderZones(); renderStats(); renderFilter(); renderList(); if (mode === "detail") renderDetail(); }
+
+  // ---------- modes du panneau ----------
+  function showMode(m){
+    const was = mode; mode = m;
+    $("#vList").hidden = m !== "list"; $("#vDraw").hidden = m !== "draw";
+    $("#vForm").hidden = m !== "form"; $("#vDetail").hidden = m !== "detail";
+    $("#map").classList.toggle("drawing", m === "draw");
+    if (m === "draw") { map.doubleClickZoom.disable(); $("#mapHint").hidden = false; $("#mapHintText").textContent = "Mode tracé : touchez la carte pour poser les coins de la zone"; }
+    else { map.doubleClickZoom.enable(); $("#mapHint").hidden = true; }
+    if ((was === "draw" || was === "form") !== (m === "draw" || m === "form")) renderZones();
+    renderDraft();
+  }
+  function updateDrawUI(){
+    $("#ptCount").textContent = draft.length;
+    $("#finishDraw").disabled = draft.length < 3;
+    $("#undoPt").disabled = draft.length === 0;
+  }
+  function startDraw(){
+    if (!canWrite || !ready) return;
+    selected = null; draft = []; editingId = null; hover = null;
+    updateDrawUI(); showMode("draw"); renderZones(); renderList();
+    if (map.getZoom() < 17) map.setZoom(17);
+    if (window.matchMedia("(max-width:900px)").matches) $(".mapbox").scrollIntoView({behavior:"smooth", block:"start"});
+  }
+  function finishDraw(){ if (draft.length < 3) return; hover = null; openForm(null); }
+  $("#startDraw").onclick = startDraw;
+  $("#finishDraw").onclick = finishDraw;
+  $("#undoPt").onclick = () => { draft.pop(); updateDrawUI(); renderDraft(); };
+  $("#cancelDraw").onclick = () => { draft = []; showMode("list"); };
+  document.addEventListener("keydown", e => {
+    if (mode !== "draw") return;
+    if (e.key === "Escape") { draft = []; showMode("list"); }
+    else if (e.key === "Enter") { e.preventDefault(); finishDraw(); }
+    else if ((e.key === "Backspace" || e.key === "Delete") && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); draft.pop(); updateDrawUI(); renderDraft(); }
+  });
+
+  // couleurs
+  const sw = $("#swatches");
+  COLORS.forEach(([c, name], i) => {
+    const inp = document.createElement("input"); inp.type = "radio"; inp.name = "color"; inp.id = "c" + i; inp.value = c;
+    const lab = document.createElement("label"); lab.htmlFor = "c" + i; lab.style.background = c; lab.title = name; lab.setAttribute("aria-label", name);
+    sw.append(inp, lab);
+  });
+  function setColor(c){ const r = [...sw.querySelectorAll("input")].find(i => i.value === c) || sw.querySelector("input"); r.checked = true; }
+  function today(){ const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+
+  function openForm(id){
+    editingId = id; $("#formErr").hidden = true;
+    if (id) {
+      const z = zones.get(id);
+      $("#formTitle").textContent = "Modifier la zone";
+      $("#fWho").value = z.who || ""; $("#fDate").value = z.date || today();
+      $("#fCount").value = Number(z.count) ? z.count : ""; $("#fNote").value = z.note || ""; setColor(z.color);
+    } else {
+      $("#formTitle").textContent = "Détails de la distribution";
+      $("#fWho").value = store.get("tract.who") || ""; $("#fDate").value = today();
+      $("#fCount").value = ""; $("#fNote").value = "";
+      setColor(store.get("tract.color") || COLORS[zones.size % COLORS.length][0]);
+    }
+    showMode("form"); $("#saveBtn").disabled = false;
+    setTimeout(() => { const w = $("#fWho"); (w.value ? $("#fCount") : w).focus({preventScroll:true}); }, 30);
+  }
+  $("#cancelForm").onclick = () => {
+    if (editingId) { const id = editingId; editingId = null; select(id, false, true); }
+    else { draft = []; showMode("list"); }
+  };
+  $("#vForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const err = $("#formErr"); err.hidden = true;
+    const who = $("#fWho").value.trim(), date = $("#fDate").value, cRaw = $("#fCount").value.trim();
+    const count = cRaw === "" ? null : Math.max(0, Math.round(Number(cRaw)));
+    const color = (sw.querySelector("input:checked") || {}).value || COLORS[0][0];
+    const note = $("#fNote").value.trim().slice(0, 400);
+    if (!who) { err.textContent = "Indiquez votre nom pour que les autres sachent qui a distribué cette zone."; err.hidden = false; $("#fWho").focus(); return; }
+    if (!date) { err.textContent = "Indiquez la date de la distribution."; err.hidden = false; return; }
+    if (cRaw !== "" && !isFinite(Number(cRaw))) { err.textContent = "Le nombre de tracts doit être un nombre."; err.hidden = false; return; }
+    store.set("tract.who", who); store.set("tract.color", color);
+    const btn = $("#saveBtn"); btn.disabled = true; btn.textContent = "Enregistrement…";
+    try {
+      let id = editingId;
+      if (id) {
+        await api.update(id, {who, date, count, note, color});
+      } else {
+        id = await api.add({pts: draft.map(p => [p[0], p[1]]), who, date, count, note, color});
+      }
+      draft = []; editingId = null;
+      await refresh();
+      select(id, false, true);
+    } catch (ex) {
+      err.textContent = ex && ex.code === "forbidden" ? "Seule la personne qui a tracé cette zone (ou l'organisateur) peut la modifier."
+        : "La zone n'a pas pu être enregistrée. Vérifiez votre connexion puis réessayez.";
+      err.hidden = false;
+    } finally { btn.disabled = false; btn.textContent = "Enregistrer la zone"; }
+  });
+
+  // détail
+  function select(id, zoom, force){
+    if (!zones.has(id)) return;
+    if (!force && (mode === "draw" || mode === "form")) return;
+    selected = id; showMode("detail"); renderZones(); renderList(); renderDetail();
+    if (zoom && validPts(zones.get(id))) map.fitBounds(L.latLngBounds(zones.get(id).pts), {padding:[40,40], maxZoom:18});
+  }
+  function renderDetail(){
+    const z = zones.get(selected);
+    if (!z) { showMode("list"); selected = null; renderZones(); renderList(); return; }
+    $("#dDot").style.background = z.color || "#ffd400";
+    $("#dWho").textContent = z.who || "Sans nom";
+    $("#dDate").textContent = fmtDate(z.date);
+    $("#dCount").textContent = Number(z.count) ? z.count + " tracts" : "non renseigné";
+    $("#dNote").textContent = z.note || "—";
+    $("#detailErr").hidden = true;
+    const del = $("#dDelete"); del.classList.remove("armed"); del.textContent = "Supprimer";
+    const mine = !!z.mine || isAdmin;
+    $("#dEdit").hidden = !(mine && canWrite); del.hidden = !(mine && canWrite);
+    const at = z.at ? new Date(z.at) : null;
+    $("#dBy").textContent = at && !isNaN(at) ? at.toLocaleString("fr-FR", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"}) + (z.mine ? " (par vous)" : "") : "—";
+  }
+  $("#dClose").onclick = () => { selected = null; showMode("list"); renderZones(); renderList(); };
+  $("#dEdit").onclick = () => { if (selected) openForm(selected); };
+  $("#dDelete").onclick = async () => {
+    const b = $("#dDelete");
+    if (!b.classList.contains("armed")) { b.classList.add("armed"); b.textContent = "Confirmer la suppression"; return; }
+    const id = selected; b.disabled = true;
+    try { await api.remove(id); zones.delete(id); selected = null; showMode("list"); renderAll(); refresh(); }
+    catch (ex) { const e = $("#detailErr"); e.textContent = ex && ex.code === "forbidden" ? "Seule la personne qui a tracé cette zone (ou l'organisateur) peut la supprimer." : "Suppression impossible pour le moment. Réessayez."; e.hidden = false; }
+    finally { b.disabled = false; }
+  };
+
+  $("#filter").onchange = () => { renderZones(); renderList(); };
+  $("#showLabels").onchange = () => { store.set("tract.labels", $("#showLabels").checked ? "1" : "0"); renderZones(); };
+  if (store.get("tract.labels") === "0") $("#showLabels").checked = false;
+
+  // ---------- données : Google Sheets (Apps Script) ou mode démo local ----------
+  function setStatus(text, isErr){ const s = $("#status"); if (!text) { s.hidden = true; return; } s.hidden = false; s.textContent = text; s.classList.toggle("err", !!isErr); }
+  function rid(){ return (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); }
+  let myKey = store.get("tract.key"); if (!myKey) { myKey = rid(); store.set("tract.key", myKey); }
+  let adminCode = store.get("tract.admin") || "";
+  function fail(code){ const e = new Error(code); e.code = code; return e; }
+
+  const remote = {
+    async list(){
+      const u = API_URL + (API_URL.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(myKey) + (adminCode ? "&admin=" + encodeURIComponent(adminCode) : "") + "&t=" + Date.now();
+      const r = await fetch(u, {cache:"no-store"}); if (!r.ok) throw fail("network");
+      const j = await r.json(); if (!j.ok) throw fail(j.error || "server");
+      isAdmin = !!j.admin; return j.zones || [];
+    },
+    async post(body){
+      const r = await fetch(API_URL, {method:"POST", body: JSON.stringify(Object.assign({key:myKey, admin:adminCode}, body))});
+      if (!r.ok) throw fail("network");
+      const j = await r.json(); if (!j.ok) throw fail(j.error || "server"); return j;
+    },
+    async add(z){ return (await this.post({action:"add", zone:z})).id; },
+    async update(id, f){ await this.post({action:"update", id, zone:f}); },
+    async remove(id){ await this.post({action:"delete", id}); }
+  };
+  const local = {
+    read(){ try { return JSON.parse(localStorage.getItem("tract.zones.v2") || "[]"); } catch(e){ return []; } },
+    write(a){ try { localStorage.setItem("tract.zones.v2", JSON.stringify(a)); } catch(e){} },
+    async list(){ isAdmin = true; return this.read().map(z => Object.assign({}, z, {mine:true})); },
+    async add(z){ const a = this.read(); const id = rid(); a.push(Object.assign({id, at:new Date().toISOString()}, z)); this.write(a); return id; },
+    async update(id, f){ this.write(this.read().map(z => z.id === id ? Object.assign({}, z, f, {editedAt:new Date().toISOString()}) : z)); },
+    async remove(id){ this.write(this.read().filter(z => z.id !== id)); }
+  };
+  const api = API_URL ? remote : local;
+
+  let loading = false, everLoaded = false, lastOk = null;
+  async function refresh(){
+    if (loading) return; loading = true;
+    try {
+      const list = await api.list();
+      const m = new Map(); list.forEach(z => { if (z && z.id && Array.isArray(z.pts)) m.set(String(z.id), z); });
+      zones = m; everLoaded = true; ready = true; lastOk = new Date();
+      $("#startDraw").disabled = !canWrite;
+      setStatus(API_URL ? "" : "Mode démo : les zones restent dans ce navigateur. Renseignez API_URL dans le fichier pour les partager via Google Sheets.");
+      if (selected && !zones.has(selected)) { selected = null; if (mode === "detail") showMode("list"); }
+      renderAll();
+      $("#syncInfo").textContent = API_URL ? "Mis à jour à " + lastOk.toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"}) + " · actualisation automatique" : "";
+      $("#adminBtn").textContent = isAdmin && API_URL ? "Organisateur ✓" : "Accès organisateur";
+    } catch (e) {
+      setStatus(everLoaded ? "Connexion perdue : les zones affichées peuvent ne pas être à jour." : "Les zones n'ont pas pu être chargées. Vérifiez votre connexion ; nouvel essai automatique dans quelques secondes.", true);
+    } finally { loading = false; }
+  }
+
+  $("#adminBtn").onclick = () => { const b = $("#adminBox"); b.hidden = !b.hidden; if (!b.hidden) { $("#adminCode").value = adminCode; $("#adminCode").focus(); } };
+  $("#adminOk").onclick = () => { adminCode = $("#adminCode").value.trim(); store.set("tract.admin", adminCode); $("#adminBox").hidden = true; refresh(); };
+  if (!API_URL) $("#adminBtn").hidden = true;
+
+  $("#startDraw").disabled = true;
+  renderAll(); refresh();
+  setInterval(() => { if (document.visibilityState === "visible" && mode !== "form") refresh(); }, REFRESH_SECONDS * 1000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+})();
+</script>
+</body>
+</html>
