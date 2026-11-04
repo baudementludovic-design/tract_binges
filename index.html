@@ -63,6 +63,15 @@ h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,4vw,40px);lin
 .layers .seg button.on{background:#fff;color:#152029}
 .layers label{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#fff;background:rgba(15,22,29,.85);border-radius:8px;padding:7px 10px;cursor:pointer}
 .maphint{position:absolute;left:10px;bottom:24px;right:60px;pointer-events:none;display:flex;z-index:500}
+.drawbar{display:none;position:absolute;left:10px;right:10px;bottom:22px;z-index:600;gap:6px;align-items:center;
+  background:rgba(15,22,29,.92);border-radius:10px;padding:6px;padding-left:12px;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.35)}
+.drawbar .db-count{font-size:13px;margin-right:auto;white-space:nowrap}
+.drawbar .db-count b{font-family:var(--mono);font-weight:500;font-size:15px}
+.drawbar button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:7px;padding:10px 12px;cursor:pointer;background:rgba(255,255,255,.14);color:#fff;white-space:nowrap}
+.drawbar button.primary{background:var(--accent);color:var(--accent-ink)}
+.drawbar button:disabled{opacity:.4;cursor:not-allowed}
+@media (max-width:900px){.drawbar.on{display:flex;bottom:46px}.drawbar.on~.maphint{bottom:108px}}
+@media (max-width:380px){.drawbar button{padding:10px 9px;font-size:13px}}
 .maphint span{background:rgba(15,22,29,.88);color:#fff;font-size:13px;padding:6px 10px;border-radius:6px;max-width:100%}
 
 aside{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -141,6 +150,12 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
         <span class="sep"></span>
         <button type="button" id="zReset" title="Recentrer sur le village" aria-label="Recentrer sur le village">⌂</button>
         <button type="button" id="zLocate" title="Me localiser" aria-label="Me localiser">◎</button>
+      </div>
+      <div class="drawbar" id="drawBar" role="toolbar" aria-label="Tracé en cours">
+        <span class="db-count"><b id="ptCount2">0</b> point(s)</span>
+        <button type="button" id="undoPt2" disabled aria-label="Retirer le dernier point">↶ Retirer</button>
+        <button type="button" id="cancelDraw2">Annuler</button>
+        <button type="button" class="primary" id="finishDraw2" disabled>Terminer</button>
       </div>
       <div class="maphint" id="mapHint" hidden><span id="mapHintText"></span></div>
     </div>
@@ -471,15 +486,16 @@ const VILLAGE = {
     $("#vList").hidden = m !== "list"; $("#vDraw").hidden = m !== "draw";
     $("#vForm").hidden = m !== "form"; $("#vDetail").hidden = m !== "detail";
     $("#map").classList.toggle("drawing", m === "draw");
+    $("#drawBar").classList.toggle("on", m === "draw");
     if (m === "draw") { map.doubleClickZoom.disable(); $("#mapHint").hidden = false; $("#mapHintText").textContent = "Mode tracé : touchez la carte pour poser les coins de la zone"; }
     else { map.doubleClickZoom.enable(); $("#mapHint").hidden = true; }
     if ((was === "draw" || was === "form") !== (m === "draw" || m === "form")) renderZones();
     renderDraft();
   }
   function updateDrawUI(){
-    $("#ptCount").textContent = draft.length;
-    $("#finishDraw").disabled = draft.length < 3;
-    $("#undoPt").disabled = draft.length === 0;
+    $("#ptCount").textContent = draft.length; $("#ptCount2").textContent = draft.length;
+    $("#finishDraw").disabled = $("#finishDraw2").disabled = draft.length < 3;
+    $("#undoPt").disabled = $("#undoPt2").disabled = draft.length === 0;
   }
   function startDraw(){
     if (!canWrite || !ready) return;
@@ -491,8 +507,9 @@ const VILLAGE = {
   function finishDraw(){ if (draft.length < 3) return; hover = null; openForm(null); }
   $("#startDraw").onclick = startDraw;
   $("#finishDraw").onclick = finishDraw;
-  $("#undoPt").onclick = () => { draft.pop(); updateDrawUI(); renderDraft(); };
-  $("#cancelDraw").onclick = () => { draft = []; showMode("list"); };
+  $("#undoPt").onclick = $("#undoPt2").onclick = () => { draft.pop(); updateDrawUI(); renderDraft(); };
+  $("#cancelDraw").onclick = $("#cancelDraw2").onclick = () => { draft = []; showMode("list"); };
+  $("#finishDraw2").onclick = () => { finishDraw(); if (mode === "form" && window.matchMedia("(max-width:900px)").matches) $("#panel").scrollIntoView({behavior:"smooth", block:"start"}); };
   document.addEventListener("keydown", e => {
     if (mode !== "draw") return;
     if (e.key === "Escape") { draft = []; showMode("list"); }
