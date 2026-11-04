@@ -13,16 +13,17 @@
 :root{
   --bg:#edf0f3; --panel:#ffffff; --ink:#152029; --muted:#5a6774; --line:#d5dce3; --soft:#f4f6f8;
   --accent:#d9481f; --accent-ink:#ffffff; --map-bg:#1a232c; --danger:#b42318; --ok:#1f7a4d;
+  --admin-bg:#fff1d6; --admin-ink:#7a4a00; --admin-line:#f0cf8f;
   --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0e141a; --panel:#151d25; --ink:#e5ebf0; --muted:#94a2af; --line:#26323d; --soft:#1b2530;
-  --accent:#ff7448; --accent-ink:#1a0e08; --map-bg:#090d11; --danger:#ff6b5e; --ok:#4fd08f; color-scheme:dark}}
+  --accent:#ff7448; --accent-ink:#1a0e08; --map-bg:#090d11; --danger:#ff6b5e; --ok:#4fd08f; --admin-bg:#3a2a0c; --admin-ink:#ffcf70; --admin-line:#6b4d16; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0e141a; --panel:#151d25; --ink:#e5ebf0; --muted:#94a2af; --line:#26323d; --soft:#1b2530;
-  --accent:#ff7448; --accent-ink:#1a0e08; --map-bg:#090d11; --danger:#ff6b5e; --ok:#4fd08f; color-scheme:dark}
+  --accent:#ff7448; --accent-ink:#1a0e08; --map-bg:#090d11; --danger:#ff6b5e; --ok:#4fd08f; --admin-bg:#3a2a0c; --admin-ink:#ffcf70; --admin-line:#6b4d16; color-scheme:dark}
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -72,6 +73,13 @@ h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,4vw,40px);lin
 .drawbar button:disabled{opacity:.4;cursor:not-allowed}
 @media (max-width:900px){.drawbar.on{display:flex;bottom:46px}.drawbar.on~.maphint{bottom:108px}}
 @media (max-width:380px){.drawbar button{padding:10px 9px;font-size:13px}}
+.adminbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;background:var(--admin-bg);color:var(--admin-ink);
+  border:1px solid var(--admin-line);border-radius:10px;padding:10px 12px 10px 14px}
+.adminbar .badge{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+.adminbar .badge::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--admin-ink)}
+.adminbar p{margin:0;font-size:14px;flex:1 1 260px;min-width:0}
+.adminbar button{font:inherit;font-size:13px;font-weight:600;border-radius:7px;padding:6px 10px;cursor:pointer;background:transparent;color:var(--admin-ink);border:1px solid var(--admin-line)}
+.adminbar button:hover{background:var(--admin-line)}
 .maphint span{background:rgba(15,22,29,.88);color:#fff;font-size:13px;padding:6px 10px;border-radius:6px;max-width:100%}
 
 aside{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -136,6 +144,12 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
       <div class="stat"><b id="stPeople">0</b><span>distributeurs</span></div>
     </div>
   </header>
+
+  <div class="adminbar" id="adminBar" role="status" hidden>
+    <span class="badge">Mode administrateur</span>
+    <p>Vous pouvez modifier et supprimer toutes les zones, y compris celles des autres distributeurs.</p>
+    <button type="button" id="adminQuit">Quitter le mode administrateur</button>
+  </div>
 
   <div class="main">
     <div class="mapbox">
@@ -239,9 +253,9 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
   <footer class="row small muted" style="justify-content:space-between">
     <span id="syncInfo"></span>
     <span class="row" style="gap:6px">
-      <button type="button" class="btn" id="adminBtn" style="padding:5px 10px;font-size:13px">Accès organisateur</button>
+      <button type="button" class="btn" id="adminBtn" style="padding:5px 10px;font-size:13px">Accès administrateur</button>
       <span id="adminBox" hidden class="row" style="gap:6px">
-        <input type="text" id="adminCode" placeholder="Code organisateur" style="width:170px;padding:5px 8px;font-size:13px">
+        <input type="text" id="adminCode" placeholder="Code administrateur" style="width:170px;padding:5px 8px;font-size:13px">
         <button type="button" class="btn" id="adminOk" style="padding:5px 10px;font-size:13px">Valider</button>
       </span>
       <span id="adminMsg" role="status"></span>
@@ -257,7 +271,7 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
    (elle se termine par /exec). Laissée vide, la page fonctionne en
    mode démo : les zones restent dans ce navigateur uniquement.
    ===================================================================== */
-const API_URL = "https://script.google.com/macros/s/AKfycbyGra9UADSL-e2Nm4eY2DTJ0O1ssD-O2VdQnLJggAV_dhdu0JfA3ydCCs1pOWrmCW7ZEQ/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyrRxcndsYtpsn7ug8i9IQS75j-nfGFDqfPDfIoHM2GxLQ5ePPd5UUQJXLaGXFETKjWHQ/exec";
 const REFRESH_SECONDS = 20;
 
 /* Village affiché à l'ouverture.
@@ -571,7 +585,7 @@ const VILLAGE = {
       await refresh();
       select(id, false, true);
     } catch (ex) {
-      err.textContent = ex && ex.code === "forbidden" ? "Seule la personne qui a tracé cette zone (ou l'organisateur) peut la modifier."
+      err.textContent = ex && ex.code === "forbidden" ? "Seule la personne qui a tracé cette zone (ou l'administrateur) peut la modifier."
         : "La zone n'a pas pu être enregistrée. Vérifiez votre connexion puis réessayez.";
       err.hidden = false;
     } finally { btn.disabled = false; btn.textContent = "Enregistrer la zone"; }
@@ -606,7 +620,7 @@ const VILLAGE = {
     if (!b.classList.contains("armed")) { b.classList.add("armed"); b.textContent = "Confirmer la suppression"; return; }
     const id = selected; b.disabled = true;
     try { await api.remove(id); zones.delete(id); selected = null; showMode("list"); renderAll(); refresh(); }
-    catch (ex) { const e = $("#detailErr"); e.textContent = ex && ex.code === "forbidden" ? "Seule la personne qui a tracé cette zone (ou l'organisateur) peut la supprimer." : "Suppression impossible pour le moment. Réessayez."; e.hidden = false; }
+    catch (ex) { const e = $("#detailErr"); e.textContent = ex && ex.code === "forbidden" ? "Seule la personne qui a tracé cette zone (ou l'administrateur) peut la supprimer." : "Suppression impossible pour le moment. Réessayez."; e.hidden = false; }
     finally { b.disabled = false; }
   };
 
@@ -660,7 +674,8 @@ const VILLAGE = {
       if (selected && !zones.has(selected)) { selected = null; if (mode === "detail") showMode("list"); }
       renderAll();
       $("#syncInfo").textContent = API_URL ? "Mis à jour à " + lastOk.toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"}) + " · actualisation automatique" : "";
-      $("#adminBtn").textContent = isAdmin && API_URL ? "Organisateur ✓" : "Accès organisateur";
+      $("#adminBtn").textContent = isAdmin && API_URL ? "Administrateur ✓" : "Accès administrateur";
+      $("#adminBar").hidden = !(isAdmin && API_URL);
     } catch (e) {
       setStatus(everLoaded ? "Connexion perdue : les zones affichées peuvent ne pas être à jour." : "Les zones n'ont pas pu être chargées. Vérifiez votre connexion ; nouvel essai automatique dans quelques secondes.", true);
     } finally { loading = false; }
@@ -671,14 +686,19 @@ const VILLAGE = {
     adminCode = $("#adminCode").value.trim(); store.set("tract.admin", adminCode);
     const msg = $("#adminMsg"); msg.style.color = ""; msg.textContent = "Vérification…";
     await refresh();
-    if (!adminCode) { msg.textContent = "Accès organisateur désactivé."; $("#adminBox").hidden = true; return; }
-    if (isAdmin) { msg.style.color = "var(--ok)"; msg.textContent = "Accès organisateur activé : vous pouvez modifier et supprimer toutes les zones."; $("#adminBox").hidden = true; return; }
+    if (!adminCode) { msg.textContent = "Accès administrateur désactivé."; $("#adminBox").hidden = true; return; }
+    if (isAdmin) { msg.style.color = "var(--ok)"; msg.textContent = ""; $("#adminBox").hidden = true; window.scrollTo({top:0, behavior:"smooth"}); return; }
     msg.style.color = "var(--danger)";
     msg.textContent = adminConfigured === false
-      ? "Le code organisateur n'a pas encore été défini : changez ADMIN_CODE dans Code.gs, puis Déployer > Gérer les déploiements > Nouvelle version."
-      : "Code non reconnu. Vérifiez qu'il est identique à ADMIN_CODE dans Code.gs (majuscules comprises) et que vous avez déployé une nouvelle version du script après l'avoir changé.";
+      ? "Le code administrateur n'a pas encore été défini : changez ADMIN_CODE dans Code.gs, puis Déployer > Gérer les déploiements > Nouvelle version."
+      : "Code administrateur non reconnu. Vérifiez qu'il est identique à ADMIN_CODE dans Code.gs (majuscules comprises) et que vous avez déployé une nouvelle version du script après l'avoir changé.";
   }
   $("#adminOk").onclick = checkAdmin;
+  $("#adminQuit").onclick = async () => {
+    adminCode = ""; store.set("tract.admin", ""); $("#adminCode").value = "";
+    isAdmin = false; $("#adminBar").hidden = true; $("#adminMsg").style.color = ""; $("#adminMsg").textContent = "Mode administrateur désactivé.";
+    await refresh();
+  };
   $("#adminCode").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); checkAdmin(); } });
   if (!API_URL) $("#adminBtn").hidden = true;
 
